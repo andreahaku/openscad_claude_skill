@@ -234,16 +234,35 @@ STL files are triangle meshes with no semantic information about the original pr
 - OpenSCAD code is human-readable and version-controllable
 - The resulting model can be adapted to different use cases
 
+### Critical Rules for Reconstruction
+
+**NEVER add or remove geometric features based on assumptions.** Always verify with mesh data AND visual comparison. A bounding box match (0.000mm delta) does NOT mean the model is correct — internal features can be completely wrong while dimensions match perfectly.
+
+**Always use the STL analysis script BEFORE writing any code:**
+```bash
+bash ~/.claude/skills/openscad/scripts/openscad-stl-analyze.sh model.stl
+bash ~/.claude/skills/openscad/scripts/openscad-stl-analyze.sh model.stl --cross-section z 0
+bash ~/.claude/skills/openscad/scripts/openscad-stl-analyze.sh model.stl --gaps y
+```
+
+**Iterate with user feedback.** Automated dimensional comparison is necessary but NOT sufficient. Always show the user multi-angle renders and ask for confirmation before declaring completion.
+
 ### Step 1: Analyze the STL
 
-First, render multi-angle previews of the STL to understand its geometry:
+Run the STL analysis script to get exact dimensions, symmetry, and internal structure hints:
+
+```bash
+bash ~/.claude/skills/openscad/scripts/openscad-stl-analyze.sh path/to/model.stl
+```
+
+This reports: bounding box, symmetry, distinct axis values, and **gap detection** (gaps in vertex distributions reveal internal features like bars, walls, channels).
+
+Then render multi-angle previews:
 
 ```openscad
 // Temporary viewer file
 import("path/to/model.stl");
 ```
-
-Save this as a temporary .scad file and render 4 previews:
 
 ```bash
 bash ~/.claude/skills/openscad/scripts/openscad-render.sh preview /tmp/stl-viewer.scad
@@ -251,9 +270,34 @@ bash ~/.claude/skills/openscad/scripts/openscad-render.sh preview /tmp/stl-viewe
 
 Read all preview images to understand the 3D shape from multiple angles.
 
-### Step 2: Extract Mesh Metadata
+### Step 2: Extract Internal Features via Cross-Section Analysis
 
-Use echo output to get bounding box and basic geometry info:
+Use the cross-section analysis to find hidden geometry inside the model:
+
+```bash
+# Check vertex distribution at the bottom face
+bash ~/.claude/skills/openscad/scripts/openscad-stl-analyze.sh model.stl --cross-section z 0
+
+# Check vertex distribution at the top face
+bash ~/.claude/skills/openscad/scripts/openscad-stl-analyze.sh model.stl --cross-section z 5.08
+
+# Find gaps along Y axis (reveals internal walls, bars, channels)
+bash ~/.claude/skills/openscad/scripts/openscad-stl-analyze.sh model.stl --gaps y
+```
+
+**Key technique: gap detection.** If vertex |Y| values at a given Z level jump from 0.79 to 3.17, there is a feature boundary at |Y|=0.79. The gap contains no mesh surface — it's empty space.
+
+**Solving cylinder parameters from vertex data:**
+If you find a cylindrical feature, collect its surface vertices at two known Z levels. At each Z, the feature's max |Y| value is related to the cylinder center and radius:
+```
+At Z=z1: y1² + (z1 - z_center)² = r²
+At Z=z2: y2² + (z2 - z_center)² = r²
+```
+Solve for `z_center` and `r` to get the exact cylinder parameters.
+
+### Step 3: Decompose into Primitives
+
+Based on the visual analysis AND mesh data, identify the geometric primitives:
 
 ```openscad
 // Analysis file
@@ -337,6 +381,14 @@ Compare echo output from the reconstruction with the STL bounding box:
 ```openscad
 echo(str("Reconstructed BBOX: ", width, " x ", depth, " x ", height));
 ```
+
+### Common Pitfalls
+
+- **Bounding box match ≠ correct model.** A model with completely wrong internal geometry can still have a 0.000mm bounding box delta. Always verify visually from multiple angles.
+- **Don't assume features from renders alone.** What looks like a cylinder in a top-down view might just be a curved wall edge. Always verify with vertex analysis.
+- **Coincident faces cause Z-fighting.** If a feature touches the body boundary exactly, use `intersection()` to clip it cleanly rather than making it the exact same size.
+- **Don't flip between adding and removing features.** If unsure whether a feature exists, run cross-section analysis before deciding. Oscillating between "add bar" and "remove bar" wastes iterations.
+- **Offset features are common.** Cylinders, holes, and channels are often NOT centered. Always calculate the actual center from vertex data rather than assuming symmetry.
 
 ### Limitations
 
@@ -444,6 +496,7 @@ All scripts live in `~/.claude/skills/openscad/scripts/`:
 | `openscad-render.sh` | Core render/export/preview engine |
 | `openscad-project.sh` | Project scaffolding and management |
 | `openscad-validate.sh` | Strict validation with categorized error output |
+| `openscad-stl-analyze.sh` | STL mesh analysis: bbox, cross-sections, gap detection |
 
 ### openscad-render.sh Commands
 
