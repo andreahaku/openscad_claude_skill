@@ -367,7 +367,13 @@ Read all preview images to understand the 3D shape from multiple angles.
 Parse the SVG contours to count bodies vs holes at each Z level.
 
 **For complex models** (brackets, enclosures with multiple features):
-Slice at every 1mm to map transitions precisely:
+Use the adaptive multi-axis slicer for efficient feature detection:
+```bash
+python3 ~/.claude/skills/openscad/scripts/openscad-adaptive-slice.py model.stl analysis/
+```
+This automatically: scans all 3 axes with coarse pass (5mm) → detects transitions → fine pass (0.5mm) around transitions. Produces a feature map classifying each zone as `solid`, `shell_or_channel`, `multi_body`, or `complex`.
+
+For manual fine-grained slicing at specific heights:
 ```bash
 for z in $(seq 0.5 1 <max_z>); do
     echo "projection(cut=true) translate([0,0,-$z]) import(\"model.stl\");" > /tmp/s.scad
@@ -637,6 +643,7 @@ All scripts live in `~/.claude/skills/openscad/scripts/`:
 | `openscad-stl-compare.sh` | Mesh comparison: boolean diff, volume delta, accuracy % |
 | `openscad-stl-reconstruct.sh` | Automated STL analysis: profiles, primitives, CSG inference |
 | `openscad-sdf-optimize.py` | SDF-based parameter optimizer (IoU scoring, no OpenSCAD in loop) |
+| `openscad-adaptive-slice.py` | Adaptive multi-axis slicing (coarse→transitions→fine on X,Y,Z) |
 
 ### openscad-render.sh Commands
 
