@@ -374,7 +374,32 @@ color("red", 0.6) reconstructed_model();
 
 Render this overlay — any RED areas visible through the transparent original indicate reconstruction errors. Any grey areas not covered by red indicate missing geometry.
 
-### Step 7: Dimensional Verification
+### Step 7: Mesh-to-Mesh Comparison
+
+**This is the most important verification step.** Export the reconstruction as STL and compare it against the original using boolean difference:
+
+```bash
+# Export reconstruction
+bash ~/.claude/skills/openscad/scripts/openscad-render.sh stl ~/openscad-projects/<name>/src/main.scad
+
+# Run mesh comparison
+bash ~/.claude/skills/openscad/scripts/openscad-stl-compare.sh \
+    path/to/original.stl \
+    ~/openscad-projects/<name>/output/main.stl \
+    ~/openscad-projects/<name>/previews/comparison
+```
+
+This produces:
+- **diff-A-minus-B.png** — geometry in original but MISSING from reconstruction (what you need to add)
+- **diff-B-minus-A.png** — EXTRA geometry in reconstruction not in original (what you need to remove)
+- **overlay.png** — both models overlaid for visual check
+- **Geometric accuracy %** — based on volume of boolean differences vs original volume
+
+**Target: >95% geometric accuracy.** If below 95%, examine the diff images to identify which features are wrong, fix them, re-export, and re-compare. Iterate until accuracy is satisfactory.
+
+**Important:** Bounding box delta can be 0.000mm while geometric accuracy is only 78% — internal features matter more than outer dimensions.
+
+### Step 8: Dimensional Verification
 
 Compare echo output from the reconstruction with the STL bounding box:
 
@@ -497,6 +522,7 @@ All scripts live in `~/.claude/skills/openscad/scripts/`:
 | `openscad-project.sh` | Project scaffolding and management |
 | `openscad-validate.sh` | Strict validation with categorized error output |
 | `openscad-stl-analyze.sh` | STL mesh analysis: bbox, cross-sections, gap detection |
+| `openscad-stl-compare.sh` | Mesh comparison: boolean diff, volume delta, accuracy % |
 
 ### openscad-render.sh Commands
 
