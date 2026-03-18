@@ -1,0 +1,134 @@
+{
+  "skill_name": "openscad",
+  "notes": "Tests focus on code generation quality, workflow adherence, and reconstruction methodology. OpenSCAD binary IS available for render/export tests.",
+  "tests": [
+    {
+      "id": "design-simple-box",
+      "prompt": "Design a simple parametric box with a lid. The box should be 60x40x30mm with 2mm walls and 4 screw posts in the corners. Export preview PNG.",
+      "expected_output_description": "A parametric .scad file with variables at top, proper modules, correct OpenSCAD syntax, and rendered preview",
+      "assertions": [
+        {
+          "id": "d1-project-init",
+          "description": "Does the output use openscad-project.sh init to create a project directory?",
+          "type": "binary"
+        },
+        {
+          "id": "d1-params-top",
+          "description": "Does the generated .scad file define all key dimensions (width, height, depth, wall) as variables at the top of the file?",
+          "type": "binary"
+        },
+        {
+          "id": "d1-modules",
+          "description": "Does the .scad file use at least one module definition for reusable geometry?",
+          "type": "binary"
+        },
+        {
+          "id": "d1-fn-set",
+          "description": "Does the .scad file set $fn to a value >= 32 for smooth curves?",
+          "type": "binary"
+        },
+        {
+          "id": "d1-renders",
+          "description": "Does the output invoke openscad-render.sh to generate a preview PNG and then read the PNG to verify the result?",
+          "type": "binary"
+        },
+        {
+          "id": "d1-valid-scad",
+          "description": "Does the generated .scad file use only valid OpenSCAD syntax (difference, union, translate, cube, cylinder, etc.)?",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "design-sculptor",
+      "prompt": "Create a phone stand with adjustable angle, 80mm wide, 50mm deep, with a slot for the charging cable.",
+      "expected_output_description": "A well-structured .scad file following the sculptor approach where the solid body is built first and cuts are applied last",
+      "assertions": [
+        {
+          "id": "d2-sculptor",
+          "description": "Does the .scad file use the sculptor approach: a single top-level difference() that subtracts all holes/cuts from a solid body, rather than building up pieces and cutting holes at intermediate steps?",
+          "type": "binary"
+        },
+        {
+          "id": "d2-eps",
+          "description": "Does the .scad file define an eps (epsilon) variable and use it in boolean operations to prevent coplanar faces?",
+          "type": "binary"
+        },
+        {
+          "id": "d2-comments",
+          "description": "Does the .scad file contain comments explaining the major sections/modules?",
+          "type": "binary"
+        },
+        {
+          "id": "d2-print-friendly",
+          "description": "Does the design consider 3D printability (wall thickness >= 1.2mm, minimal overhangs, flat bottom)?",
+          "type": "binary"
+        },
+        {
+          "id": "d2-preview",
+          "description": "Does the workflow include rendering a preview PNG and visually analyzing it before presenting to the user?",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "reconstruct-stl",
+      "prompt": "I have an STL file at /Users/administrator/Downloads/Toothpaste_Squeezer.stl that I need converted to parametric OpenSCAD. It's a simple toothpaste squeezer.",
+      "expected_output_description": "Uses the reconstruction pipeline: STL analysis first, then SVG profiling, then writes .scad code using sculptor approach, then verifies with mesh comparison",
+      "assertions": [
+        {
+          "id": "r1-analysis-first",
+          "description": "Does the workflow run openscad-stl-reconstruct.sh or openscad-stl-analyze.sh on the STL file BEFORE writing any .scad code?",
+          "type": "binary"
+        },
+        {
+          "id": "r1-svg-profiles",
+          "description": "Does the workflow use SVG profile slicing (projection cut) or the reconstruct script to analyze the internal structure at multiple Z levels?",
+          "type": "binary"
+        },
+        {
+          "id": "r1-sculptor-approach",
+          "description": "Does the generated .scad code use the sculptor approach (solid body first, all subtractions last)?",
+          "type": "binary"
+        },
+        {
+          "id": "r1-mesh-compare",
+          "description": "Does the workflow run openscad-stl-compare.sh to verify the reconstruction against the original STL and report geometric accuracy percentage?",
+          "type": "binary"
+        },
+        {
+          "id": "r1-no-guessing",
+          "description": "Does the workflow extract dimensions from mesh data (bounding box, SVG contours, vertex analysis) rather than guessing/estimating dimensions?",
+          "type": "binary"
+        }
+      ]
+    },
+    {
+      "id": "export-parametric",
+      "prompt": "Export the bracket at ~/openscad-projects/interior-bracket/src/main.scad as STL with wall=3 and hole_d=4 parameter overrides.",
+      "expected_output_description": "Uses openscad-render.sh with -D flags to override parameters and exports STL",
+      "assertions": [
+        {
+          "id": "e1-render-script",
+          "description": "Does the output use openscad-render.sh (stl or export command) to generate the STL file?",
+          "type": "binary"
+        },
+        {
+          "id": "e1-d-flags",
+          "description": "Does the command include -D flags to override the wall and hole_d parameters?",
+          "type": "binary"
+        },
+        {
+          "id": "e1-output-path",
+          "description": "Does the output specify or report the path where the STL file was saved?",
+          "type": "binary"
+        },
+        {
+          "id": "e1-file-size",
+          "description": "Does the output report the file size or triangle count of the exported STL?",
+          "type": "binary"
+        }
+      ]
+    }
+  ]
+}
