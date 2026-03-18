@@ -420,6 +420,33 @@ Compare echo output from the reconstruction with the STL bounding box:
 echo(str("Reconstructed BBOX: ", width, " x ", depth, " x ", height));
 ```
 
+### Step 9: SDF Parameter Optimization (Advanced)
+
+If the SVG profile method doesn't achieve >95% accuracy, use the SDF optimizer for automatic parameter tuning:
+
+```bash
+python3 ~/.claude/skills/openscad/scripts/openscad-sdf-optimize.py \
+    path/to/original.stl \
+    stadium-slot \
+    --verbose \
+    --output analysis/sdf-result.json
+```
+
+This works by:
+1. Sampling 30,000 random points in the bounding box
+2. Computing target occupancy (inside/outside original mesh) via trimesh
+3. Defining the reconstruction as a parametric SDF (Signed Distance Field)
+4. Using `scipy.optimize.minimize(method="Powell")` to maximize IoU (Intersection over Union)
+5. Generating OpenSCAD code with optimized parameters
+
+**When to use**: When you know the correct model topology (e.g., "stadium body with cylindrical slot") but can't find the exact parameters. The optimizer finds them automatically.
+
+**Supported model types**: `stadium-slot`, `box-holes`. Add new types by defining an SDF function in the script.
+
+**Workflow**: Run `openscad-stl-reconstruct.sh` first (to identify the model topology), then `openscad-sdf-optimize.py` (to find exact parameters), then `openscad-stl-compare.sh` (to verify).
+
+**Prerequisites**: `pip3 install trimesh numpy scipy rtree`
+
 ### Common Pitfalls
 
 - **Bounding box match ≠ correct model.** A model with completely wrong internal geometry can still have a 0.000mm bounding box delta. Always verify visually from multiple angles.
@@ -537,6 +564,7 @@ All scripts live in `~/.claude/skills/openscad/scripts/`:
 | `openscad-stl-analyze.sh` | STL mesh analysis: bbox, cross-sections, gap detection |
 | `openscad-stl-compare.sh` | Mesh comparison: boolean diff, volume delta, accuracy % |
 | `openscad-stl-reconstruct.sh` | Automated STL analysis: profiles, primitives, CSG inference |
+| `openscad-sdf-optimize.py` | SDF-based parameter optimizer (IoU scoring, no OpenSCAD in loop) |
 
 ### openscad-render.sh Commands
 
