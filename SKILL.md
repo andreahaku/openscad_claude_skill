@@ -275,11 +275,32 @@ STL files are triangle meshes with no semantic information about the original pr
 
 **Read `references/reconstruction-guide.md` before starting any reconstruction.** It contains the complete best practices guide learned from real reconstructions.
 
-**Rule 1: SCULPTOR APPROACH (mandatory).** Always start from a full solid block, then subtract ALL features. Never build up from pieces — it causes CSG ordering bugs where added material covers previously-cut holes. Structure: `difference() { solid_body(); channels(); tapers(); ALL_holes_LAST(); }`
+**Rule 1: SCULPTOR APPROACH (mandatory).** Start from a full solid block, subtract ALL features. Never build up from pieces — CSG ordering bugs cause added material to cover previously-cut holes. Structure: `difference() { solid_body(); channels(); tapers(); ALL_holes_LAST(); }`
 
-**Rule 2: NEVER add features based on assumptions.** Always verify with SVG profiles AND reference images. Don't hallucinate features (e.g., adding top holes that don't exist).
+**Rule 2: NEVER add features based on assumptions.** Always verify with SVG contour data AND reference images. If a feature doesn't appear as a separate contour in the SVG slices, IT DOES NOT EXIST. Known hallucinations to avoid:
+- Pyramids/cones from render shadows
+- Cylinders from curved wall edges
+- Top holes from through-hole exit points
 
-**Rule 3: Bounding box match ≠ correct model.** A model with 0.000mm bbox delta can have only 70% geometric accuracy. Always use BOTH volume comparison AND boolean diff images.
+**Rule 3: Bounding box match ≠ correct model.** 0.000mm bbox delta can mean only 70% geometric accuracy. Always use mesh comparison (`openscad-stl-compare.sh`) with boolean diff images.
+
+**Rule 4: Choose the right approach for the geometry type:**
+
+| Geometry | Best Approach | Expected Accuracy |
+|----------|--------------|-------------------|
+| Flat/angular (brackets, plates) | Profile extraction + linear_extrude | 90-96% |
+| Simple known shapes (stadium, box) | Parametric primitives + SDF optimizer | 90-96% |
+| Cylindrical features (puzzle tabs, bosses) | Parametric circle() + square() | 85-95% |
+| Mixed (curves + flats) | Polygon profile (hi-res, tol=0.02) | 70-80% |
+| Complex organic shapes | import() original STL + parametric modifications | N/A |
+
+**Rule 5: Profile-extract FIRST, then decide approach.**
+```bash
+# Always run both tools before writing any code:
+bash ~/.claude/skills/openscad/scripts/openscad-stl-reconstruct.sh model.stl analysis/
+python3 ~/.claude/skills/openscad/scripts/openscad-profile-extract.py model.stl --json analysis/profile.json
+```
+The profile extractor's stability score tells you which axis to extrude along. The SVG contour analysis tells you the internal structure. Together they determine the approach.
 
 **Use the automated reconstruction analysis FIRST — before writing any code:**
 ```bash
@@ -300,18 +321,32 @@ bash ~/.claude/skills/openscad/scripts/openscad-stl-compare.sh original.stl reco
 ```
 Target: >95% geometric accuracy. Use diff images to identify remaining discrepancies.
 
-### Step 1: Automated Analysis
-
-Run the full reconstruction analysis pipeline:
+### Step 1: Automated Analysis (run BOTH tools)
 
 ```bash
-bash ~/.claude/skills/openscad/scripts/openscad-stl-reconstruct.sh path/to/model.stl analysis_dir/
+# Tool 1: SVG profiling + primitive detection
+bash ~/.claude/skills/openscad/scripts/openscad-stl-reconstruct.sh model.stl analysis/
+
+# Tool 2: Profile extraction + extrusion axis detection
+python3 ~/.claude/skills/openscad/scripts/openscad-profile-extract.py model.stl \
+    --output analysis/profile.scad --json analysis/profile.json
 ```
 
-Key outputs to examine:
-- **slices/*.svg** — 2D profiles at 5 Z levels (bottom, 25%, 50%, 75%, top)
-- **primitives.json** — detected cylinders with axis, radius, center, and CSG operation type
-- **mesh-info.json** — volume, dimensions, symmetry, primary axis
+**Key outputs to examine:**
+- `analysis/slices/*.svg` — 2D profiles at 5 Z levels
+- `analysis/profile.json` — extrusion axis, stability score, profile points, hole count
+- `analysis/primitives.json` — detected cylinders/planes
+- `analysis/mesh-info.json` — volume, dimensions, symmetry
+
+**Decision tree from the analysis:**
+1. If `stability_score < 0.1` → the shape is a clean extrusion. Use `profile.scad` directly with `linear_extrude()`
+2. If `stability_score < 0.3` → mostly extruded with variations. Extract profile + add features from SVG contour differences
+3. If `stability_score > 0.3` → complex shape. Use SVG slicing at 1mm intervals to map the full structure, then model with parametric primitives
+
+**For models with cylindrical features** (stability > 0.3 or SVG shows circular contours):
+- Do NOT rely on polygon profiles — they approximate curves poorly
+- Identify circle centers and radii from the SVG contour data
+- Model with `circle()` + `square()` in 2D, then extrude
 
 Then render multi-angle previews:
 
@@ -326,71 +361,65 @@ bash ~/.claude/skills/openscad/scripts/openscad-render.sh preview /tmp/stl-viewe
 
 Read all preview images to understand the 3D shape from multiple angles.
 
-### Step 2: Extract Internal Features via Cross-Section Analysis
+### Step 2: Detailed Structure Mapping
 
-Use the cross-section analysis to find hidden geometry inside the model:
+**For simple models** (5 SVG slices are enough):
+Parse the SVG contours to count bodies vs holes at each Z level.
 
+**For complex models** (brackets, enclosures with multiple features):
+Slice at every 1mm to map transitions precisely:
 ```bash
-# Check vertex distribution at the bottom face
-bash ~/.claude/skills/openscad/scripts/openscad-stl-analyze.sh model.stl --cross-section z 0
-
-# Check vertex distribution at the top face
-bash ~/.claude/skills/openscad/scripts/openscad-stl-analyze.sh model.stl --cross-section z 5.08
-
-# Find gaps along Y axis (reveals internal walls, bars, channels)
-bash ~/.claude/skills/openscad/scripts/openscad-stl-analyze.sh model.stl --gaps y
+for z in $(seq 0.5 1 <max_z>); do
+    echo "projection(cut=true) translate([0,0,-$z]) import(\"model.stl\");" > /tmp/s.scad
+    openscad -o "slices/z${z}.svg" /tmp/s.scad
+done
 ```
 
-**Key technique: gap detection.** If vertex |Y| values at a given Z level jump from 0.79 to 3.17, there is a feature boundary at |Y|=0.79. The gap contains no mesh surface — it's empty space.
-
-**Solving cylinder parameters from vertex data:**
-If you find a cylindrical feature, collect its surface vertices at two known Z levels. At each Z, the feature's max |Y| value is related to the cylinder center and radius:
+Parse each SVG to build a structural map:
 ```
-At Z=z1: y1² + (z1 - z_center)² = r²
-At Z=z2: y2² + (z2 - z_center)² = r²
-```
-Solve for `z_center` and `r` to get the exact cylinder parameters.
-
-### Step 3: Decompose into Primitives
-
-Based on the visual analysis AND mesh data, identify the geometric primitives:
-
-```openscad
-// Analysis file
-model = import("path/to/model.stl");
-
-// OpenSCAD 2021.01 doesn't have mesh introspection,
-// so we rely on the render output stats (vertices, facets, etc.)
-import("path/to/model.stl");
+Z=0-5:   1 body (full width) + 8 holes     → Solid base with screw holes
+Z=5-10:  2 bodies + 8 holes                → Channel appeared, walls split
+Z=10-20: 2 bodies narrowing                → Taper zone (measure rate)
+Z=20-33: 2 bodies constant width           → Top section
+Z=25-27: Bodies interrupted                → Counterbore pockets at this depth
 ```
 
-The render output will report vertex count, facet count, and bounding box info. Note these for dimensional reference.
+**Hole positions from SVG centroids** — for each hole contour at a given Z, compute the centroid. This gives exact X,Y positions far more reliably than vertex analysis.
 
-### Step 3: Decompose into Primitives
+**Feature verification rule:** If a feature doesn't appear as a distinct contour in the SVG data, IT DOES NOT EXIST in the model. Never add features based on visual interpretation of 3D renders alone.
 
-Based on the visual analysis, identify the geometric primitives that compose the object:
+### Step 3: Choose Approach and Decompose
 
-**Primitive detection heuristics:**
-- **Flat faces with right angles** → `cube()` or `linear_extrude()` of a rectangle
-- **Curved surfaces (uniform radius)** → `cylinder()` or `sphere()`
-- **Tapered curves** → `cylinder(r1, r2)` (cone)
-- **Complex profiles extruded** → `linear_extrude()` of a 2D `polygon()`
-- **Axially symmetric shapes** → `rotate_extrude()` of a 2D profile
-- **Holes/cutouts** → `difference()` with cylinders or cubes
-- **Rounded edges** → `minkowski()` with small sphere, or `hull()`
-- **Repeated features** → `for()` loop with a module
-- **Organic/freeform surfaces** → May not be fully reconstructable; use `import()` for complex parts
+Based on the analysis data, choose the reconstruction approach:
 
-Create a decomposition plan:
+**Approach A — Profile Extrusion** (for extruded parts, stability < 0.3):
+```bash
+# The profile extractor already generated the .scad — use it as a starting point
+cat analysis/profile.scad
+# Adjust: add cavity with offset(delta=-wall), add floor, add features
 ```
-Original STL: bracket-v2.stl (15,234 triangles)
+
+**Approach B — Parametric Primitives** (for known shapes or cylindrical features):
+Create a decomposition plan using measured dimensions from SVG data:
+```
 Decomposition:
-1. Base plate: cube([80, 40, 5]) — flat bottom section
-2. Upright: cube([5, 40, 60]) — vertical section
-3. Fillet: hull-based transition between base and upright
-4. 4x mounting holes: cylinder(d=5, h=10) at corners
-5. 2x slot cutouts: cube([20, 3, 40]) in upright
+1. Base: square([80, 80]) + circle tabs — from SVG outer contour at Z=mid
+2. Cavity: offset(delta=-wall) of base — from SVG inner contour
+3. Floor: solid at Z=0 to floor_h — from SVG at Z=0 (1 contour = solid)
+4. Holes: cylinder(d=3) at SVG hole centroids
+5. Counterbores: cylinder(d=8, h=2) at same positions
 ```
+
+**Approach C — Hybrid** (for complex shapes with both flat and curved features):
+1. Extract polygon profile for the overall outline
+2. Identify which curves in the profile are circles (regular spacing, arc-like)
+3. Replace those polygon sections with parametric `circle(r)` operations
+4. Assemble: `square() + circle()` union for tabs, `difference()` for slots
+
+**Counterbore vs Countersink** — always verify from reference images:
+- **Counterbore**: flat cylindrical pocket (`cylinder(d=cb_d, h=cb_depth)`)
+- **Countersink**: conical taper (`cylinder(d1=cs_d, d2=hole_d, h=cs_depth)`)
+- Most 3D-printed parts use counterbores, not countersinks
 
 ### Step 4: Write Parametric .scad Code
 
