@@ -1,0 +1,16 @@
+# Build artifacts
+*.stl
+*.3mf
+*.amf
+*.echo
+
+# Preview images (generated)
+previews/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# OpenSCAD backup files
+*.scad~
+*.bak
