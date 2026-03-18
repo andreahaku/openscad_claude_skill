@@ -173,3 +173,38 @@ brew install admesh
 | Excellent | >98% | Production quality |
 
 The 95% threshold is achievable for most mechanical parts in 4-6 iterations using the SVG profiling approach. The remaining 5% is typically tessellation differences and minor feature details.
+
+## When to Use Polygon Profiles vs Parametric Primitives
+
+### Use extracted polygon profiles when:
+- The shape has mostly flat/angular surfaces (brackets, plates, channels)
+- The curves are gentle and well-approximated by ~200 polygon points
+- Speed is more important than last-5% accuracy
+- Expected accuracy: 75-96% depending on curve complexity
+
+### Use parametric primitives (circle, cylinder) when:
+- The shape has prominent cylindrical features (puzzle tabs, screw holes, bosses)
+- The shape can be decomposed into known primitives (square + circles)
+- You need >95% accuracy on curved surfaces
+- The model has symmetry that can be exploited
+
+### Hybrid approach (best for complex models):
+1. Extract the polygon profile for the overall outline
+2. Identify which curves are circles/arcs from the profile data
+3. Replace polygon approximations with parametric `circle(r)` where possible
+4. Use `offset(r)` for rounded corners instead of polygon vertices
+
+### Key lesson: polygon simplification tolerance matters enormously
+- 0.3mm tolerance → ~50 points → curves become flat → 52% accuracy
+- 0.05mm tolerance → ~150 points → curves approximate → 75% accuracy
+- 0.02mm tolerance → ~230 points → curves close but not perfect → 75% accuracy
+- Diminishing returns beyond ~200 points for polygon-based approaches
+- For >90% on cylindrical surfaces, parametric primitives are required
+
+## Feature Hallucination Prevention
+
+NEVER add features based on visual interpretation of renders alone.
+- The toothpaste squeezer "cylinder" was actually a rounded slot floor
+- The puzzle tray "pyramid" didn't exist at all — it was a shadow in the render
+- ALWAYS verify features with SVG slice data (contour count, area, holes)
+- If a feature doesn't show as a separate contour in the SVG slices, IT DOESN'T EXIST
