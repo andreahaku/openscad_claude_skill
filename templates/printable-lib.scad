@@ -112,6 +112,32 @@ module text_label(txt="Label", size=8, depth=1, font="Liberation Sans:style=Bold
         text(txt, size=size, font=font, halign=halign, valign=valign);
 }
 
+// --- Ventilation grille ---
+module vent_grille(area_w=30, area_h=15, slot_w=2, slot_gap=2, depth=2) {
+    n_slots = floor(area_h / (slot_w + slot_gap));
+    for (i = [0:n_slots-1])
+        translate([0, i * (slot_w + slot_gap), 0])
+            cube([area_w, slot_w, depth + 2*eps]);
+}
+
+// --- PCB standoff array ---
+module pcb_standoffs(positions, height=5, outer_d=6, hole_d=2.5) {
+    for (pos = positions)
+        translate(pos)
+            difference() {
+                cylinder(d=outer_d, h=height, $fn=32);
+                translate([0, 0, -eps])
+                    cylinder(d=hole_d, h=height + 2*eps, $fn=32);
+            }
+}
+
+// --- Profile with rounded corners (2D) ---
+// Use with linear_extrude() — preferred over hull() of cylinders
+module rounded_rect_2d(size, r=2) {
+    offset(r=r)
+        square([size.x - 2*r, size.y - 2*r], center=true);
+}
+
 // --- Lid lip (for box closures) ---
 module lid_lip(outer_size, wall=2, lip_h=2, lip_w=1.2, tol=0.25) {
     difference() {

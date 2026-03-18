@@ -1,5 +1,33 @@
 # STL-to-SCAD Reconstruction Best Practices
 
+## Profile-Based Reconstruction (Preferred Method)
+
+For extruded parts (brackets, plates, channels), extract the 2D profile directly from the mesh and convert it to OpenSCAD `polygon()` + `linear_extrude()`. This is more accurate than fitting known primitives.
+
+### Step 1: Detect Extrusion Axis
+Use trimesh to find the axis with the most stable cross-section:
+- Slice the mesh along X, Y, and Z at 64 levels each
+- For each axis, measure stability: std(area), std(perimeter), std(hole_count)
+- The axis with lowest stability score is the extrusion axis
+
+### Step 2: Extract the Dominant Profile
+- Find the slice with the largest area (the representative cross-section)
+- Simplify the polygon (remove micro-vertices from tessellation)
+- Handle holes: inner contours become `paths` in OpenSCAD `polygon()`
+
+### Step 3: Convert to OpenSCAD
+```openscad
+// Auto-generated from mesh profile extraction
+linear_extrude(height = <extrusion_length>)
+    polygon(
+        points = [<extracted_points>],
+        paths = [<outer_boundary>, <hole_1>, <hole_2>]
+    );
+```
+
+### Step 4: Add Secondary Features
+Features that vary along the extrusion axis (holes, counterbores) are detected by comparing slice profiles at different heights. Where a slice has more holes than the dominant profile, subtract cylinders.
+
 ## The Sculptor Approach (MANDATORY)
 
 Always model as a sculptor: start from a solid block, then subtract material.

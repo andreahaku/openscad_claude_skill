@@ -68,6 +68,43 @@ This creates `~/openscad-projects/<project-name>/` with subdirectories for sourc
 
 Write the OpenSCAD code to `~/openscad-projects/<project-name>/src/main.scad`.
 
+**Mandatory file structure (Feature Tree pattern):**
+```openscad
+// 1. PARAMETERS (independent variables)
+width = 60;  height = 30;  wall = 2;
+
+// 2. DERIVED DIMENSIONS (calculated from parameters)
+inner_width = width - 2 * wall;
+
+// 3. BASE PROFILE (2D sketch — the core shape)
+module sketch_base() {
+    offset(r = corner_r)
+        square([width - 2*corner_r, depth - 2*corner_r], center=true);
+}
+
+// 4. PRIMARY BODY (extrude the sketch)
+module body() { linear_extrude(height = height) sketch_base(); }
+
+// 5. ADDITIVE FEATURES (bosses, ribs, tabs)
+module features_add() { ... }
+
+// 6. SUBTRACTIVE FEATURES (holes, slots, pockets — ALWAYS LAST)
+module features_cut() { ... }
+
+// 7. ASSEMBLY (the Feature Tree)
+difference() {
+    union() { body(); features_add(); }
+    features_cut();
+}
+```
+
+**Profile-first design rules:**
+- Prefer `polygon()` + `linear_extrude()` over `hull()` of 3D primitives
+- Use `offset(r=radius)` for corner rounding instead of `hull()` with cylinders
+- Use `rotate_extrude()` for axially symmetric parts (never stack cylinders)
+- Define dimensions relative to edges/features, not absolute coordinates: `hole_x = total_length - edge_margin` (not magic numbers)
+- Cascade tolerances from a single `fit_clearance` parameter
+
 **Critical rules for generating OpenSCAD code:**
 - Read `~/.claude/skills/openscad/references/language-reference.md` if unsure about syntax
 - Always define parametric dimensions as variables at the top of the file
@@ -655,6 +692,10 @@ module main_assembly() {
 - **Epsilon constant**: always define `eps = 0.01;` and use it in boolean operations to prevent Z-fighting / coplanar faces
 - **Manifold geometry**: always ensure boolean operations produce valid solids; operands must overlap
 - **Resolution**: use `$fn = 64` for preview, `$fn = 128` for export
+- **Design intent**: Define hole positions relative to edges (`hole_x = length - margin`), never as absolute coordinates
+- **Tolerance chains**: Define a single `fit_clearance` parameter and derive all clearances from it
+- **Assert validation**: Use `assert()` to validate parameters: `assert(wall >= 1.2)`, `assert(boss_d > hole_d + 2*wall)`
+- **Profile-first**: Use `offset(r=corner_r)` on 2D `polygon()` instead of `hull()` with 3D cylinders
 
 ### Common Patterns
 
