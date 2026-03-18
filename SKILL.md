@@ -8,7 +8,8 @@ description: >
   "design an enclosure", "make a box", "create a bracket", or any 3D modeling task.
   Also triggers on "refine the model", "adjust dimensions", "preview the design",
   "export for printing", "multi-view preview", "check printability", "replicate this object",
-  "reproduce from image", "recreate this part", "model this from photo", or "reverse engineer".
+  "reproduce from image", "recreate this part", "model this from photo", "reverse engineer",
+  "convert STL to SCAD", "reconstruct from STL", "make this STL parametric", or "STL to OpenSCAD".
 argument-hint: "<description of object to design or path to existing .scad file>"
 allowed-tools: "Bash(*),Read,Edit,Write,Glob,Grep,Agent"
 metadata:
@@ -31,10 +32,11 @@ Design, render, preview, and export 3D models using OpenSCAD's programmatic CAD 
 
 ## Modes
 
-The skill operates in four modes, auto-detected from the user's request:
+The skill operates in six modes, auto-detected from the user's request:
 
 - **Design** — Create a new 3D model from a description
 - **Replicate** — Reproduce a physical object from reference images
+- **Reconstruct** — Reverse-engineer an STL mesh into parametric OpenSCAD code
 - **Refine** — Iterate on an existing .scad file (modify, preview, repeat)
 - **Export** — Render final STL/3MF for 3D printing
 - **Analyze** — Review an existing design for printability or improvements
@@ -218,6 +220,152 @@ When the user confirms the replication is satisfactory, export for printing.
 - **Organic shapes**: Approximate with hull(), minkowski(), or rotate_extrude() of a profile
 - **Iterate small**: Change one thing per render cycle
 - **Ask when unsure**: If a feature is ambiguous from the images, ask the user rather than guessing
+
+---
+
+## Workflow: Reconstruct Mode (STL-to-SCAD)
+
+When the user provides an STL file and wants it converted to parametric OpenSCAD code:
+
+### Overview
+
+STL files are triangle meshes with no semantic information about the original primitives or operations that created them. Reconstruction is the process of analyzing the mesh geometry and re-expressing it as clean, parametric OpenSCAD code. This is valuable because:
+- Parametric code can be modified (change dimensions, add features)
+- OpenSCAD code is human-readable and version-controllable
+- The resulting model can be adapted to different use cases
+
+### Step 1: Analyze the STL
+
+First, render multi-angle previews of the STL to understand its geometry:
+
+```openscad
+// Temporary viewer file
+import("path/to/model.stl");
+```
+
+Save this as a temporary .scad file and render 4 previews:
+
+```bash
+bash ~/.claude/skills/openscad/scripts/openscad-render.sh preview /tmp/stl-viewer.scad
+```
+
+Read all preview images to understand the 3D shape from multiple angles.
+
+### Step 2: Extract Mesh Metadata
+
+Use echo output to get bounding box and basic geometry info:
+
+```openscad
+// Analysis file
+model = import("path/to/model.stl");
+
+// OpenSCAD 2021.01 doesn't have mesh introspection,
+// so we rely on the render output stats (vertices, facets, etc.)
+import("path/to/model.stl");
+```
+
+The render output will report vertex count, facet count, and bounding box info. Note these for dimensional reference.
+
+### Step 3: Decompose into Primitives
+
+Based on the visual analysis, identify the geometric primitives that compose the object:
+
+**Primitive detection heuristics:**
+- **Flat faces with right angles** → `cube()` or `linear_extrude()` of a rectangle
+- **Curved surfaces (uniform radius)** → `cylinder()` or `sphere()`
+- **Tapered curves** → `cylinder(r1, r2)` (cone)
+- **Complex profiles extruded** → `linear_extrude()` of a 2D `polygon()`
+- **Axially symmetric shapes** → `rotate_extrude()` of a 2D profile
+- **Holes/cutouts** → `difference()` with cylinders or cubes
+- **Rounded edges** → `minkowski()` with small sphere, or `hull()`
+- **Repeated features** → `for()` loop with a module
+- **Organic/freeform surfaces** → May not be fully reconstructable; use `import()` for complex parts
+
+Create a decomposition plan:
+```
+Original STL: bracket-v2.stl (15,234 triangles)
+Decomposition:
+1. Base plate: cube([80, 40, 5]) — flat bottom section
+2. Upright: cube([5, 40, 60]) — vertical section
+3. Fillet: hull-based transition between base and upright
+4. 4x mounting holes: cylinder(d=5, h=10) at corners
+5. 2x slot cutouts: cube([20, 3, 40]) in upright
+```
+
+### Step 4: Write Parametric .scad Code
+
+Create a new project and write the reconstructed code:
+
+```bash
+bash ~/.claude/skills/openscad/scripts/openscad-project.sh init "<name>-reconstructed"
+```
+
+**Key principles for reconstruction:**
+- Extract ALL dimensions as named variables at the top
+- Use meaningful variable names that describe the physical feature
+- Add comments linking each section to the original STL features
+- Include `echo()` statements for bounding box verification
+- Add `assert()` for parameter ranges
+
+### Step 5: Visual Comparison Loop
+
+Render the reconstructed .scad and compare side-by-side with the original STL renders:
+
+1. Render the reconstruction from the same camera angles as Step 1
+2. Read both sets of images
+3. Compare silhouettes, proportions, and feature placement
+4. Identify the biggest discrepancy
+5. Fix it and re-render
+6. Repeat until the reconstruction matches the original
+
+### Step 6: Overlay Verification
+
+For precise verification, create an overlay .scad file:
+
+```openscad
+// Overlay: original STL (transparent) vs reconstruction
+%import("path/to/original.stl");  // % = transparent background
+color("red", 0.6) reconstructed_model();
+```
+
+Render this overlay — any RED areas visible through the transparent original indicate reconstruction errors. Any grey areas not covered by red indicate missing geometry.
+
+### Step 7: Dimensional Verification
+
+Compare echo output from the reconstruction with the STL bounding box:
+
+```openscad
+echo(str("Reconstructed BBOX: ", width, " x ", depth, " x ", height));
+```
+
+### Limitations
+
+- **Organic shapes** (sculpted, freeform surfaces) cannot be fully reconstructed as primitives. For these, keep the STL import and wrap it in a module.
+- **Very complex models** (1000+ features) should be reconstructed incrementally, starting with the major body and adding features one group at a time.
+- **Thread geometry** in STL is extremely difficult to reconstruct. Use `threads.scad` library instead of trying to match individual thread faces.
+- **Text/engravings** embedded in STL meshes are very hard to extract. It's better to re-add text using OpenSCAD's `text()` module.
+
+### Hybrid Approach
+
+For complex models, use a hybrid strategy:
+```openscad
+// Import the complex organic base from STL
+module original_base() {
+    import("base-section.stl");
+}
+
+// Reconstruct and parameterize the mechanical features
+module mounting_bracket(width=30, hole_d=5) {
+    difference() {
+        original_base();
+        // Add parametric mounting holes
+        for (pos = hole_positions)
+            translate(pos) cylinder(d=hole_d, h=50, center=true);
+    }
+}
+```
+
+This lets the user modify the parametric parts while keeping the complex geometry intact.
 
 ---
 

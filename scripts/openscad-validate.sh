@@ -3,7 +3,7 @@
 # Runs OpenSCAD in strict mode and parses errors into actionable categories
 set -euo pipefail
 
-OPENSCAD="/opt/homebrew/bin/openscad"
+OPENSCAD="${OPENSCAD_BIN:-$(command -v openscad || echo /opt/homebrew/bin/openscad)}"
 
 usage() {
     echo "Usage: openscad-validate.sh <file.scad> [-D 'var=val' ...]"
@@ -48,7 +48,7 @@ if echo "$output" | grep -q "Parser error"; then
     echo "$output" | grep "ERROR:" | head -5
     echo ""
     # Extract line number
-    line=$(echo "$output" | grep -oP 'line \K\d+' | head -1)
+    line=$(echo "$output" | sed -n 's/.*line \([0-9]*\).*/\1/p' | head -1)
     if [[ -n "$line" ]]; then
         echo "Error at line $line. Context:"
         sed -n "$((line > 3 ? line - 3 : 1)),${line}p" "$scad_file" 2>/dev/null | cat -n

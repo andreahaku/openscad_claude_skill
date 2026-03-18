@@ -2,12 +2,10 @@
 # openscad-render.sh — Core render/export/preview engine for OpenSCAD skill
 set -euo pipefail
 
-OPENSCAD="/opt/homebrew/bin/openscad"
-IMGSIZE_PREVIEW="800,600"
+OPENSCAD="${OPENSCAD_BIN:-$(command -v openscad || echo /opt/homebrew/bin/openscad)}"
+IMGSIZE_PREVIEW="${OPENSCAD_IMGSIZE:-800,600}"
 IMGSIZE_HIRES="1600,1200"
-COLORSCHEME="DeepOcean"
-FN_PREVIEW=64
-FN_EXPORT=128
+COLORSCHEME="${OPENSCAD_COLORSCHEME:-DeepOcean}"
 
 usage() {
     cat <<'EOF'

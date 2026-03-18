@@ -20,6 +20,13 @@ EOF
 
 cmd_init() {
     local name="$1"
+
+    # Sanitize project name to prevent directory traversal
+    if [[ ! "$name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        echo "ERROR: Project name must contain only letters, numbers, hyphens, and underscores." >&2
+        exit 1
+    fi
+
     local project_dir="$PROJECTS_ROOT/$name"
 
     if [[ -d "$project_dir" ]]; then
@@ -53,6 +60,10 @@ inner_width = width - 2 * wall;
 inner_height = height - 2 * wall;
 inner_depth = depth - 2 * wall;
 
+// --- Debug output ---
+echo(str("BBOX: ", width, " x ", depth, " x ", height, " mm"));
+echo(str("Wall: ", wall, " mm | Tolerance: ", tolerance, " mm"));
+
 // --- Main Assembly ---
 // TODO: Replace with your design
 example();
@@ -66,8 +77,12 @@ module example() {
 }
 SCAD
 
-    # Replace placeholder
-    sed -i '' "s/\${PROJECT_NAME}/$name/g" "$project_dir/src/main.scad"
+    # Replace placeholder (compatible with both macOS and Linux sed)
+    if [[ "$(uname)" == "Darwin" ]]; then
+        sed -i '' "s/\${PROJECT_NAME}/$name/g" "$project_dir/src/main.scad"
+    else
+        sed -i "s/\${PROJECT_NAME}/$name/g" "$project_dir/src/main.scad"
+    fi
 
     # Create a project README
     cat > "$project_dir/README.md" <<EOF

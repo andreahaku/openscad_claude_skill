@@ -89,14 +89,24 @@ module chamfer_edge(length=10, size=1) {
 }
 
 // --- Snap-fit tab ---
+// Creates a cantilever snap tab extending along Y with a hook at the end
 module snap_tab(width=8, length=6, thick=1.5, overhang=0.8) {
     union() {
+        // Cantilever arm
         cube([width, length, thick]);
+        // Hook at the end
         translate([0, length, 0])
             linear_extrude(height=width)
-                rotate([0, 0, 0])
-                    polygon([[0, 0], [0, thick], [overhang, thick/2]]);
+                polygon([[0, 0], [overhang, thick/2], [0, thick]]);
     }
+}
+
+// --- Text emboss/deboss helper ---
+// Use with difference() to deboss or union() to emboss
+module text_label(txt="Label", size=8, depth=1, font="Liberation Sans:style=Bold",
+                  halign="center", valign="center") {
+    linear_extrude(height=depth)
+        text(txt, size=size, font=font, halign=halign, valign=valign);
 }
 
 // --- Lid lip (for box closures) ---

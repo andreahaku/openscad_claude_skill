@@ -25,10 +25,17 @@ vent_length = 20;    // [mm] slot length
 
 // --- Quality ---
 $fn = 64;
+eps = 0.01;  // epsilon for clean booleans
+
+// --- Assertions ---
+assert(wall >= 1.2, "wall too thin for FDM (min 1.2mm)");
+assert(width > 2 * wall, "inner width must be positive");
+assert(depth > 2 * wall, "inner depth must be positive");
+assert(height > wall, "inner height must be positive");
 
 // --- Render ---
 // Show both parts side by side
-translate([0, 0, 0]) box_bottom();
+box_bottom();
 translate([width + wall * 2 + 10, 0, 0]) box_lid();
 
 // --- Modules ---
