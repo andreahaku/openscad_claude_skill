@@ -236,7 +236,13 @@ STL files are triangle meshes with no semantic information about the original pr
 
 ### Critical Rules for Reconstruction
 
-**NEVER add or remove geometric features based on assumptions.** Always verify with mesh data AND visual comparison. A bounding box match (0.000mm delta) does NOT mean the model is correct — internal features can be completely wrong while dimensions match perfectly.
+**Read `references/reconstruction-guide.md` before starting any reconstruction.** It contains the complete best practices guide learned from real reconstructions.
+
+**Rule 1: SCULPTOR APPROACH (mandatory).** Always start from a full solid block, then subtract ALL features. Never build up from pieces — it causes CSG ordering bugs where added material covers previously-cut holes. Structure: `difference() { solid_body(); channels(); tapers(); ALL_holes_LAST(); }`
+
+**Rule 2: NEVER add features based on assumptions.** Always verify with SVG profiles AND reference images. Don't hallucinate features (e.g., adding top holes that don't exist).
+
+**Rule 3: Bounding box match ≠ correct model.** A model with 0.000mm bbox delta can have only 70% geometric accuracy. Always use BOTH volume comparison AND boolean diff images.
 
 **Use the automated reconstruction analysis FIRST — before writing any code:**
 ```bash
