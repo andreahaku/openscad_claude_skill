@@ -40,10 +40,12 @@ module screw_clearance_hole(d=3, h=10, fit="close") {
 }
 
 // --- Counterbore hole (for socket head cap screws) ---
+// Head pocket at entry side (top), shaft goes through
 module counterbore_hole(shaft_d=3, head_d=6, head_h=3, h=12) {
     union() {
         screw_clearance_hole(shaft_d, h);
-        cylinder(h=head_h + eps, d=head_d, $fn=48);
+        translate([0, 0, h - head_h + eps])
+            cylinder(h=head_h + eps, d=head_d, $fn=48);
     }
 }
 
@@ -94,10 +96,11 @@ module snap_tab(width=8, length=6, thick=1.5, overhang=0.8) {
     union() {
         // Cantilever arm
         cube([width, length, thick]);
-        // Hook at the end
-        translate([0, length, 0])
-            linear_extrude(height=width)
-                polygon([[0, 0], [overhang, thick/2], [0, thick]]);
+        // Hook at the end (rotated extrusion for clean manifold)
+        translate([0, length - eps, 0])
+            rotate([90, 0, 90])
+                linear_extrude(height=width)
+                    polygon([[0, 0], [thick + eps, 0], [thick/2, overhang]]);
     }
 }
 

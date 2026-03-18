@@ -123,11 +123,12 @@ cmd_preview() {
     declare -A views
     views=(
         ["1-isometric"]="--autocenter --viewall"
-        ["2-iso-rear"]="--autocenter --viewall --camera 0,0,0,55,0,205,0"
-        ["3-front"]="--autocenter --viewall --camera 0,0,0,90,0,0,0"
-        ["4-top"]="--autocenter --viewall --camera 0,0,0,0,0,0,0"
+        ["2-front"]="--autocenter --viewall --projection o --camera 0,0,0,90,0,0,0"
+        ["3-right"]="--autocenter --viewall --projection o --camera 0,0,0,90,0,90,0"
+        ["4-top"]="--autocenter --viewall --projection o --camera 0,0,0,0,0,0,0"
     )
 
+    local failed=0
     echo "Rendering 4-view preview..."
     for view_name in $(echo "${!views[@]}" | tr ' ' '\n' | sort); do
         local out="$preview_dir/${view_name}-${timestamp}.png"
@@ -135,13 +136,21 @@ cmd_preview() {
 
         echo "  Rendering $view_name..."
         # shellcheck disable=SC2086
-        do_render "$scad_file" \
+        if ! do_render "$scad_file" \
             $camera_args \
             --imgsize="$IMGSIZE_PREVIEW" \
             --colorscheme="$COLORSCHEME" \
             --render \
             -o "$out" \
-            "$@" || true
+            "$@"; then
+            echo "  FAILED: $view_name" >&2
+            rm -f "$out"
+            failed=1
+        elif [[ ! -s "$out" ]]; then
+            echo "  ERROR: Empty render output: $out" >&2
+            rm -f "$out"
+            failed=1
+        fi
     done
 
     echo ""
@@ -270,34 +279,42 @@ cmd_analyze() {
     echo "--- Echo Output ---"
     do_render "$scad_file" \
         -o "$project_dir/output/analysis.echo" \
-        "$@" 2>&1 || true
-    if [[ -f "$project_dir/output/analysis.echo" ]]; then
+        "$@" 2>&1 || echo "Echo capture failed (non-critical)" >&2
+    if [[ -f "$project_dir/output/analysis.echo" ]] && [[ -s "$project_dir/output/analysis.echo" ]]; then
         cat "$project_dir/output/analysis.echo"
     fi
 
     # Bottom view (to check overhangs / first layer)
+    local bottom_png="$project_dir/previews/analysis-bottom-${timestamp}.png"
     echo ""
     echo "--- Bottom View (check first layer / overhangs) ---"
-    do_render "$scad_file" \
+    if ! do_render "$scad_file" \
         --autocenter --viewall \
         --camera 0,0,0,180,0,0,0 \
         --imgsize="$IMGSIZE_PREVIEW" \
         --colorscheme="$COLORSCHEME" \
         --render \
-        -o "$project_dir/previews/analysis-bottom-${timestamp}.png" \
-        "$@" || true
+        -o "$bottom_png" \
+        "$@"; then
+        echo "WARNING: Bottom view render failed (may need OpenGL context)" >&2
+        rm -f "$bottom_png"
+    fi
 
     # Isometric wireframe
+    local wireframe_png="$project_dir/previews/analysis-wireframe-${timestamp}.png"
     echo ""
     echo "--- Wireframe View ---"
-    do_render "$scad_file" \
+    if ! do_render "$scad_file" \
         --autocenter --viewall \
         --view edges \
         --imgsize="$IMGSIZE_PREVIEW" \
         --colorscheme="$COLORSCHEME" \
         --render \
-        -o "$project_dir/previews/analysis-wireframe-${timestamp}.png" \
-        "$@" || true
+        -o "$wireframe_png" \
+        "$@"; then
+        echo "WARNING: Wireframe render failed (may need OpenGL context)" >&2
+        rm -f "$wireframe_png"
+    fi
 
     echo ""
     echo "=== Analysis Complete ==="

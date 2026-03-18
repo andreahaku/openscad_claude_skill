@@ -37,10 +37,10 @@ cmd_init() {
 
     mkdir -p "$project_dir"/{src,output,previews}
 
-    # Create a starter main.scad
-    cat > "$project_dir/src/main.scad" <<'SCAD'
+    # Create a starter main.scad (name injected directly, no sed needed)
+    cat > "$project_dir/src/main.scad" <<SCAD
 // ============================================
-// Project: ${PROJECT_NAME}
+// Project: $name
 // Description: TODO
 // Author: Claude Code + User
 // ============================================
@@ -53,7 +53,7 @@ wall = 2.0;        // [mm] wall thickness
 tolerance = 0.3;   // [mm] printer tolerance
 
 // --- Rendering quality ---
-$fn = 64;          // curve smoothness (use 128+ for final export)
+\$fn = 64;          // curve smoothness (use 128+ for final export)
 
 // --- Derived dimensions ---
 inner_width = width - 2 * wall;
@@ -76,13 +76,6 @@ module example() {
     }
 }
 SCAD
-
-    # Replace placeholder (compatible with both macOS and Linux sed)
-    if [[ "$(uname)" == "Darwin" ]]; then
-        sed -i '' "s/\${PROJECT_NAME}/$name/g" "$project_dir/src/main.scad"
-    else
-        sed -i "s/\${PROJECT_NAME}/$name/g" "$project_dir/src/main.scad"
-    fi
 
     # Create a project README
     cat > "$project_dir/README.md" <<EOF
