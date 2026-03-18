@@ -208,3 +208,34 @@ NEVER add features based on visual interpretation of renders alone.
 - The puzzle tray "pyramid" didn't exist at all — it was a shadow in the render
 - ALWAYS verify features with SVG slice data (contour count, area, holes)
 - If a feature doesn't show as a separate contour in the SVG slices, IT DOESN'T EXIST
+
+## Adaptive Multi-Axis Slicing
+
+The `openscad-adaptive-slice.py` script scans STL on all 3 axes:
+1. Coarse pass (5mm) → detects where cross-section changes
+2. Fine pass (0.5mm) only at transition zones
+3. Classifies each zone: solid, shell_or_channel, multi_body, complex
+
+### How to interpret the feature map
+
+**Zone types and their OpenSCAD equivalents:**
+- `solid` (1 contour, 0 holes) → `linear_extrude()` of the profile
+- `shell_or_channel` (2 contours) → walls around a cavity, use `offset(delta=-wall)`
+- `solid_with_holes` (1 contour, N holes) → solid body with `difference()` holes
+- `multi_body` (N contours) → multiple separate parts or holes
+- `complex` → may need `hull()` between profiles or `polyhedron()`
+
+**Detecting specific features from zone evolution:**
+- **Chamfer/taper**: contour width decreases progressively across slices
+- **Fillet**: smooth curvature in contour centroids between zones
+- **Counterbore**: nested circular contours with constant radius for several slices
+- **Through-hole**: hole contour appears in ALL slices along that axis
+- **Blind hole**: hole contour appears then disappears
+
+**Generating OpenSCAD from zones:**
+- Stable zones (many identical slices) → `linear_extrude(height=zone_length)` of representative profile
+- Transition zones (gradual change) → `hull()` between two profiles at zone boundaries
+- Feature zones (holes, counterbores) → `difference()` with fitted cylinders
+
+### Future: Feature Map → OpenSCAD Translator
+The next evolution is automatic translation: parse the JSON feature map, emit one `module zone_N()` per zone, assemble with `difference()/union()` in the correct order. This would close the loop from STL → analysis → parametric .scad automatically.
