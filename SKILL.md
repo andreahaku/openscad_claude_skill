@@ -238,24 +238,37 @@ STL files are triangle meshes with no semantic information about the original pr
 
 **NEVER add or remove geometric features based on assumptions.** Always verify with mesh data AND visual comparison. A bounding box match (0.000mm delta) does NOT mean the model is correct — internal features can be completely wrong while dimensions match perfectly.
 
-**Always use the STL analysis script BEFORE writing any code:**
+**Use the automated reconstruction analysis FIRST — before writing any code:**
 ```bash
-bash ~/.claude/skills/openscad/scripts/openscad-stl-analyze.sh model.stl
-bash ~/.claude/skills/openscad/scripts/openscad-stl-analyze.sh model.stl --cross-section z 0
-bash ~/.claude/skills/openscad/scripts/openscad-stl-analyze.sh model.stl --gaps y
+bash ~/.claude/skills/openscad/scripts/openscad-stl-reconstruct.sh model.stl output_dir/
 ```
 
-**Iterate with user feedback.** Automated dimensional comparison is necessary but NOT sufficient. Always show the user multi-angle renders and ask for confirmation before declaring completion.
+This runs the full pipeline: mesh stats (trimesh), 2D profile slices (OpenSCAD projection), primitive detection (RANSAC/normal analysis), and generates SVG profiles at multiple Z levels. The SVG profile analysis is the MOST IMPORTANT output — it reveals the complete cross-section structure at each height level.
 
-### Step 1: Analyze the STL
+**The SVG Profile Method** (preferred over vertex analysis):
+1. `projection(cut=true)` slices the STL at a Z height → exports 2D SVG
+2. Parse the SVG to count contours: BODY (large area) vs HOLES (small area)
+3. Compare contours at different Z levels to understand how the shape changes with height
+4. This reveals: channels, slots, holes, wall thickness, taper angles — all from 2D data
 
-Run the STL analysis script to get exact dimensions, symmetry, and internal structure hints:
+**After analysis, verify with mesh comparison:**
+```bash
+bash ~/.claude/skills/openscad/scripts/openscad-stl-compare.sh original.stl reconstruction.stl output_dir/
+```
+Target: >95% geometric accuracy. Use diff images to identify remaining discrepancies.
+
+### Step 1: Automated Analysis
+
+Run the full reconstruction analysis pipeline:
 
 ```bash
-bash ~/.claude/skills/openscad/scripts/openscad-stl-analyze.sh path/to/model.stl
+bash ~/.claude/skills/openscad/scripts/openscad-stl-reconstruct.sh path/to/model.stl analysis_dir/
 ```
 
-This reports: bounding box, symmetry, distinct axis values, and **gap detection** (gaps in vertex distributions reveal internal features like bars, walls, channels).
+Key outputs to examine:
+- **slices/*.svg** — 2D profiles at 5 Z levels (bottom, 25%, 50%, 75%, top)
+- **primitives.json** — detected cylinders with axis, radius, center, and CSG operation type
+- **mesh-info.json** — volume, dimensions, symmetry, primary axis
 
 Then render multi-angle previews:
 
@@ -523,6 +536,7 @@ All scripts live in `~/.claude/skills/openscad/scripts/`:
 | `openscad-validate.sh` | Strict validation with categorized error output |
 | `openscad-stl-analyze.sh` | STL mesh analysis: bbox, cross-sections, gap detection |
 | `openscad-stl-compare.sh` | Mesh comparison: boolean diff, volume delta, accuracy % |
+| `openscad-stl-reconstruct.sh` | Automated STL analysis: profiles, primitives, CSG inference |
 
 ### openscad-render.sh Commands
 
