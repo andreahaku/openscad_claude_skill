@@ -1,4 +1,5 @@
 ---
+disable-model-invocation: true
 name: openscad
 description: >
   Programmatic 3D CAD with OpenSCAD. Generate .scad files, render STL for 3D printing,
