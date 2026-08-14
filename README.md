@@ -4,6 +4,9 @@ A Claude Code skill for programmatic 3D CAD using [OpenSCAD](https://openscad.or
 
 ## Features
 
+- **Quick mode** — One round trip from "I need a spacer" to a rendered part: assumptions are guessed, then listed back explicitly instead of asked for up front
+- **Modify mode** — Edit an existing STL with booleans (`import()` + cut/add/trim) in minutes, without reconstructing it
+- **Printer calibration** — Clearances descend from one measured profile, so a part fits on the first print instead of the third
 - **Programmatic 3D modeling** — Generate `.scad` files from natural language descriptions
 - **AI vision feedback loop** — Render multi-angle PNG previews and analyze them to iteratively refine designs
 - **STL-to-SCAD reconstruction** — Reverse-engineer STL meshes into parametric OpenSCAD code using SVG profiling and SDF optimization
@@ -16,19 +19,34 @@ A Claude Code skill for programmatic 3D CAD using [OpenSCAD](https://openscad.or
 
 ## Prerequisites
 
-- **OpenSCAD** installed and accessible via CLI
-  ```bash
-  brew install openscad    # macOS
-  ```
-- **Python packages** (for STL reconstruction):
-  ```bash
-  pip3 install trimesh numpy scipy rtree shapely
-  ```
-- **admesh** (for mesh validation):
-  ```bash
-  brew install admesh
-  ```
-- **Claude Code** CLI installed
+**OpenSCAD**, reachable from the CLI. Every script resolves it as `$OPENSCAD_BIN`, else
+`command -v openscad` — no path is hardcoded.
+
+```bash
+sudo pacman -S openscad     # Arch / Omarchy
+brew install openscad       # macOS
+sudo apt install openscad   # Debian / Ubuntu
+```
+
+**Python packages**, needed **only** by Reconstruct and Replicate. Quick, Modify, Design and
+Export work without them.
+
+```bash
+# Arch: install from the repos, the interpreter is externally managed and pip will refuse
+sudo pacman -S python-trimesh python-numpy python-scipy python-shapely python-rtree
+
+# macOS / other
+pip3 install trimesh numpy scipy rtree shapely
+```
+
+**Claude Code** CLI installed.
+
+### Calibrate the printer, once
+
+Clearances are the difference between a part that fits and a reprint. Print
+`templates/calibration-comb.scad` one time, measure it, and write the numbers into
+`templates/printer-profile.scad`. Until `profile_measured` is set to `true` the skill uses
+declared defaults and says so whenever it emits a part whose function depends on a fit.
 
 ## Installation
 

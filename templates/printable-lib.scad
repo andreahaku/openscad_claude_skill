@@ -5,13 +5,19 @@
 
 eps = 0.01;  // epsilon for clean boolean operations
 
+// Measured behaviour of the actual printer. Every fit in this library descends
+// from here, so calibrating once fixes every part that comes after.
+// How to measure it: see the header of printer-profile.scad.
+include <printer-profile.scad>
+
 // --- Clearance helpers ---
-// Returns clearance value for different fit types
+// Returns the clearance for a fit type, read from the printer profile.
+// A part built on these numbers is only as trustworthy as profile_measured.
 function fit_clearance(kind="close") =
-    kind == "press"  ? 0.15 :
-    kind == "close"  ? 0.25 :
-    kind == "loose"  ? 0.40 :
-    kind == "slide"  ? 0.30 : 0.25;
+    kind == "press"  ? clearance_press :
+    kind == "close"  ? clearance_close :
+    kind == "loose"  ? clearance_loose :
+    kind == "slide"  ? clearance_slide : clearance_close;
 
 // --- Shell / Hollow box ---
 module shell_box(outer=[60,40,20], wall=2, floor=2) {

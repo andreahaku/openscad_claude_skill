@@ -1,40 +1,262 @@
 ---
-disable-model-invocation: true
 name: openscad
 description: >
-  Programmatic 3D CAD with OpenSCAD. Generate .scad files, render STL for 3D printing,
-  preview as PNG with AI vision feedback. Triggers on: 3D model, STL, 3D print, parametric
-  design, openscad, CAD, enclosure, bracket, or any 3D modeling task.
-argument-hint: "<description of object to design or path to existing .scad file>"
+  Programmatic 3D CAD with OpenSCAD. Fast path for simple printable parts (Quick mode) and for
+  editing an existing STL without reconstructing it (Modify mode), plus full design, STL-to-
+  parametric reconstruction, and export. Triggers on: 3D model, STL, 3D print, parametric
+  design, openscad, CAD, enclosure, bracket, spacer, adapter, holder, "modifica questo STL",
+  or any 3D modeling task.
+argument-hint: "<description of object to design, or path to an existing .scad / .stl file>"
 allowed-tools: "Bash(*),Read,Edit,Write,Glob,Grep,Agent"
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   category: 3d-cad
-  tags: [openscad, 3d-printing, cad, parametric, stl, modeling, design]
+  tags: [openscad, 3d-printing, cad, parametric, stl, modeling, design, quick, modify]
 ---
 
 # OpenSCAD Skill
 
-Design, render, preview, and export 3D models using OpenSCAD's programmatic CAD engine. Supports iterative AI-driven design refinement via rendered PNG analysis.
+Design, render, preview, and export 3D models using OpenSCAD's programmatic CAD engine.
+
+**Speed comes from picking the right mode, not from cutting corners inside one.** Generating
+code takes seconds in every mode; what costs time is asking questions that could have been
+guessed, rendering four views when one answers, reconstructing a mesh that only needed a hole
+moved, and printing a part whose clearances were never measured. The mode table below exists
+to spend that time only where it buys something.
 
 ## Environment
 
-- **OpenSCAD binary**: `/opt/homebrew/bin/openscad` (v2021.01)
-- **Working directory for designs**: `~/openscad-projects/` (create per-project subdirectories)
+- **OpenSCAD binary**: resolved at runtime by every script as `$OPENSCAD_BIN`, else
+  `command -v openscad`. Linux: `sudo pacman -S openscad` (Arch) or the distro equivalent.
+  macOS: `brew install openscad`. Never hardcode a path.
+- **Python deps** (Reconstruct and Replicate only — Quick, Modify, Design and Export do not
+  need them): `trimesh`, `numpy`, `scipy`, `shapely`, `rtree`. On Arch install them from the
+  repos (`python-trimesh` and friends), not with pip: the interpreter is externally managed.
+- **Working directory for designs**: `~/openscad-projects/`, one subdirectory per project.
+  Quick mode is the exception and writes flat files into `~/openscad-projects/_quick/`.
 - **Skill scripts**: `~/.claude/skills/openscad/scripts/`
 - **Templates**: `~/.claude/skills/openscad/templates/`
+- **Printer profile**: `~/.claude/skills/openscad/templates/printer-profile.scad` — the
+  measured behaviour of the actual printer. Read it before emitting any part whose function
+  depends on a fit, and say out loud when `profile_measured` is still false.
 - **Language reference**: `~/.claude/skills/openscad/references/`
 
 ## Modes
 
-The skill operates in six modes, auto-detected from the user's request:
+The skill operates in eight modes, auto-detected from the user's request. The first two are
+the fast ones and cover most real requests — reach for the others only when they are the job.
 
-- **Design** — Create a new 3D model from a description
-- **Replicate** — Reproduce a physical object from reference images
-- **Reconstruct** — Reverse-engineer an STL mesh into parametric OpenSCAD code
-- **Refine** — Iterate on an existing .scad file (modify, preview, repeat)
-- **Export** — Render final STL/3MF for 3D printing
-- **Analyze** — Review an existing design for printability or improvements
+| Mode | Use it when | Cost |
+|---|---|---|
+| **Quick** | "I need a simple part, now" — a spacer, a bracket, a holder, an adapter | minutes |
+| **Modify** | An STL already exists and is nearly right: a hole to move, 2mm to add, a face to flatten | minutes |
+| **Design** | A new part with real requirements, several features, dimensions that must be discussed | tens of minutes |
+| **Replicate** | Reproduce a physical object starting from photographs | an hour or more |
+| **Reconstruct** | Turn an STL mesh back into parametric code you can own and edit | hours |
+| **Refine** | Iterate on an existing .scad (change, preview, repeat) | depends |
+| **Export** | Render the final STL/3MF for printing | seconds |
+| **Analyze** | Review an existing design for printability | minutes |
+
+**Choosing between Quick, Modify and Design.** Quick guesses and shows; Design asks and then
+shows. If the part is simple enough that wrong guesses are cheap to correct on screen, Quick
+wins because it costs one round trip instead of two. If the user hands you an existing STL,
+Modify beats both — and it beats Reconstruct too, unless they actually need the geometry to
+become parametric.
+
+---
+
+## Workflow: Quick Mode
+
+**The default for "I need a simple part".** The point is one round trip: the user describes
+the object and gets back a rendered part plus the list of everything that was assumed. They
+correct the assumptions that are wrong instead of answering a questionnaire first.
+
+### Step 1: Do not ask. Infer, and write down what you inferred.
+
+Skip the clarification round. Derive whatever can be derived from the request, pick defensible
+defaults for the rest, and **keep an explicit list of every value you invented**. That list is
+what you hand back, and it is what makes guessing safe.
+
+Standing defaults, unless the request says otherwise: wall 2mm, floor 2mm, corner radius 2mm,
+`fit_clearance("close")` for anything receiving a screw or a shaft, `$fn = 64`, flat bottom on
+the bed, no support.
+
+Only stop and ask when a missing number makes the part **meaningless** rather than merely
+wrong — you cannot invent the diameter of the tube a holder has to hold. One question, then
+proceed.
+
+### Step 2: Start from the library, not from an empty file
+
+```bash
+mkdir -p ~/openscad-projects/_quick
+```
+
+Write a single file `~/openscad-projects/_quick/<name>.scad`. No project scaffolding, no `src/`
+and `output/` tree: a quick part that needs a directory structure is not quick.
+
+```openscad
+use <printable-lib.scad>   // resolved via OPENSCADPATH, set by the skill scripts
+```
+
+⚠️ **Never write a `~` inside `use <>` or `include <>`.** OpenSCAD does not expand the tilde,
+and the failure is silent: the library is simply not found and every module call errors out.
+The skill scripts export `OPENSCADPATH` pointing at `templates/`, so the bare filename works
+from any directory. If you invoke `openscad` by hand outside those scripts, export it yourself:
+
+```bash
+export OPENSCADPATH=~/.claude/skills/openscad/templates
+```
+
+The library already carries counterbores, heat-set bosses, screw posts, ribs, snap tabs,
+rounded boxes, shells, vents and lid lips, and those modules already read the printer profile.
+Keep the Feature Tree structure from Design mode (parameters, derived, profile, body, add, cut,
+assembly): it costs nothing and makes the next change trivial.
+
+### Step 3: Deterministic gate, before you look at anything
+
+```bash
+bash ~/.claude/skills/openscad/scripts/openscad-validate.sh ~/openscad-projects/_quick/<name>.scad
+```
+
+Check what can be computed rather than seen:
+- it compiles, with no warnings about unassigned variables
+- the bounding box matches the dimensions the user actually gave
+- no wall thinner than `min_wall`, no floor thinner than `min_floor` (printer profile)
+- overhangs within `max_overhang`, or support is called out
+- the part fits `bed_size`
+
+⚠️ `openscad-validate.sh` is a **report, not a gate**: it exits 0 even when the file is broken.
+Read the `Category:` line — `OK` passes, anything else (`SYNTAX_ERROR`, `WARNING`, …) stops the
+part here. Do not rely on the exit code or on `set -e` to catch it.
+
+A part that fails here never reaches the render. The eye is for shape; these are arithmetic,
+and arithmetic should not cost a vision call.
+
+### Step 4: One render, isometric
+
+```bash
+bash ~/.claude/skills/openscad/scripts/openscad-render.sh quick ~/openscad-projects/_quick/<name>.scad
+```
+
+One image, not four. Read it and check the shape is what was asked for. Four angles belong to
+Design mode, where the geometry is complex enough to hide something.
+
+### Step 5: Hand it back with the assumptions visible
+
+Report, in this order:
+1. the preview
+2. **the assumptions list** — every invented number, one per line, so the wrong ones are
+   obvious at a glance
+3. the parametric knobs, so a change is a `-D` away and not a rewrite
+4. ⚠️ if `profile_measured` is false and the part has a fit, say that the clearances are
+   declared defaults and not measurements, and that the first print is the one that tells
+
+Then stop. The user corrects an assumption or asks for the STL. Do not iterate on your own
+initiative: in Quick mode a second unrequested render is wasted time.
+
+### Step 6: Export, when asked
+
+```bash
+bash ~/.claude/skills/openscad/scripts/openscad-render.sh export ~/openscad-projects/_quick/<name>.scad
+```
+
+**When to abandon Quick mode:** the moment the part grows a third interacting feature, or a
+dimension turns out to depend on a measurement nobody has, switch to Design mode and say so.
+Quick mode that keeps iterating is Design mode with worse manners.
+
+---
+
+## Workflow: Modify Mode
+
+**The fastest useful thing in this skill, and the most common real job.** A model already
+exists — downloaded, or printed once and not quite right — and it needs one change: a hole
+somewhere else, two millimetres more clearance, a boss added, a face flattened.
+
+**Do not reconstruct it.** Reconstruction turns a mesh back into parametric code and costs
+hours. Modify treats the mesh as a solid and cuts into it, which costs minutes and needs
+nothing beyond `openscad` itself: no Python, no analysis pipeline.
+
+### Step 1: Import and see it
+
+```openscad
+// modify.scad
+$fn = 64;
+eps = 0.01;
+original = "/absolute/path/to/model.stl";
+
+import(original, convexity = 10);
+```
+
+`convexity` matters: without it a preview of a mesh with internal cavities renders wrong.
+Render once with `openscad-render.sh quick` and confirm you are looking at the right object.
+
+### Step 2: Find the coordinates you need
+
+The mesh arrives in its own coordinate system, which is rarely the one you want.
+
+```bash
+python3 ~/.claude/skills/openscad/scripts/openscad-profile-extract.py model.stl --json /tmp/m.json
+```
+
+If the Python stack is not available, the bounding box alone covers most edits, and OpenSCAD
+gives it for free by rendering the model against a known reference cube. Do not guess
+coordinates from a picture: that is Rule 2 of Reconstruct mode, and it applies here just as
+hard.
+
+### Step 3: Cut, add, or trim
+
+```openscad
+difference() {
+    import(original, convexity = 10);
+
+    // a new hole, positioned against a real reference, never a magic number
+    translate([hole_x, hole_y, -eps])
+        cylinder(h = part_h + 2*eps, d = 4 + fit_clearance("close"));
+}
+```
+
+The three edits that cover almost everything:
+
+| Need | Shape |
+|---|---|
+| New hole, or an existing one widened | `difference()` with a cylinder through it |
+| Add material (boss, rib, tab, packing) | `union()` with a module from `printable-lib.scad` |
+| Flatten a face, cut a part away | `intersection()` with a large cube, or `difference()` with one |
+
+**Widening an existing hole is a subtraction, not an edit**: put a larger cylinder exactly on
+the old axis. Finding that axis is the whole job, and it comes from measurement, not from the
+render.
+
+⚠️ **Booleans on an imported mesh are only as sound as the mesh.** If the STL is not manifold,
+OpenSCAD will still produce something and it will be wrong. Check first:
+
+```bash
+bash ~/.claude/skills/openscad/scripts/openscad-stl-analyze.sh model.stl
+```
+
+A non-manifold input is the one case where Modify is not the answer: repair the mesh first, or
+reconstruct it.
+
+### Step 4: Verify against the original
+
+```bash
+bash ~/.claude/skills/openscad/scripts/openscad-stl-compare.sh model.stl modified.stl /tmp/cmp/
+```
+
+The boolean difference should show **exactly** the change that was asked for and nothing else.
+A surprise elsewhere in the diff means a coordinate is wrong, and seeing it here is far cheaper
+than seeing it after the print.
+
+### Step 5: Export
+
+```bash
+bash ~/.claude/skills/openscad/scripts/openscad-render.sh stl ~/openscad-projects/_quick/modify.scad
+```
+
+The result is a mesh, not parametric code: the change is repeatable by editing `modify.scad`,
+but the original geometry stays opaque. **That is the trade** — minutes instead of hours, at
+the price of not owning the shape. When the user needs to own it, that is Reconstruct mode, and
+it should be chosen deliberately rather than fallen into.
 
 ---
 
@@ -862,8 +1084,9 @@ Popular libraries that can be installed for advanced features:
 
 Check installed libraries:
 ```bash
-ls ~/.local/share/OpenSCAD/libraries/ 2>/dev/null
-ls /opt/homebrew/share/openscad/libraries/ 2>/dev/null
+ls ~/.local/share/OpenSCAD/libraries/ 2>/dev/null      # user libraries, both platforms
+ls /usr/share/openscad/libraries/ 2>/dev/null          # system libraries, Linux
+ls /opt/homebrew/share/openscad/libraries/ 2>/dev/null # system libraries, macOS
 ```
 
 When user needs a library, install it and add `use <library/file.scad>` to the .scad source.
