@@ -3,6 +3,12 @@
 set -euo pipefail
 
 OPENSCAD="${OPENSCAD_BIN:-$(command -v openscad || echo /opt/homebrew/bin/openscad)}"
+
+# Let generated .scad files resolve `use <printable-lib.scad>` from any directory:
+# OpenSCAD does NOT expand ~, so a tilde path in a source file silently fails to
+# find the library. OPENSCADPATH is the supported way to add a search root.
+_SKILL_TEMPLATES="$(cd "$(dirname "${BASH_SOURCE[0]}")/../templates" && pwd)"
+export OPENSCADPATH="${OPENSCADPATH:+$OPENSCADPATH:}$_SKILL_TEMPLATES"
 IMGSIZE_PREVIEW="${OPENSCAD_IMGSIZE:-800,600}"
 IMGSIZE_HIRES="1600,1200"
 COLORSCHEME="${OPENSCAD_COLORSCHEME:-DeepOcean}"
